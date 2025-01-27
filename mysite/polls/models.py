@@ -3,6 +3,7 @@ from datetime import datetime
 from typing import List
 from django.contrib.auth.models import AbstractBaseUser, BaseUserManager, PermissionsMixin
 import re
+from django.contrib.auth.hashers import make_password, check_password
 
 
 class UserManager(BaseUserManager):
@@ -10,8 +11,14 @@ class UserManager(BaseUserManager):
         if not email:
             raise ValueError('Email обязателен')
         email = self.normalize_email(email)
+        
+        # Проверяем пароль перед хешированием
+        if not User.validate_password(password):
+            raise ValueError('Password must contain at least 3 characters, including lowercase, uppercase and digit')
+            
         user = self.model(email=email, **extra_fields)
-        user.set_password(password)
+        # Хешируем пароль
+        user.password = make_password(password)
         user.save(using=self._db)
         return user
 
@@ -52,8 +59,34 @@ class User(AbstractBaseUser, PermissionsMixin):
         if not self.patronymic[0].isupper():
             raise ValueError('Отчество должно начинаться с заглавной буквы')
 
+    def set_password(self, raw_password):
+        """
+        Переопределяем метод установки пароля для добавления валидации
+        """
+        if raw_password is None:
+            self.set_unusable_password()
+        else:
+            if not self.validate_password(raw_password):
+                raise ValueError('Password must contain at least 3 characters, including lowercase, uppercase and digit')
+            self.password = make_password(raw_password)
+
+    def check_password(self, raw_password):
+        """
+        Проверяет соответствие переданного пароля хешу
+        """
+        def setter(raw_password):
+            self.set_password(raw_password)
+            self.save(update_fields=["password"])
+            
+        return check_password(raw_password, self.password, setter)
+
     @staticmethod
     def validate_password(password):
+        """
+        Валидация пароля
+        """
+        if not password:
+            return False
         if len(password) < 3:
             return False
         if not re.search(r'[a-z]', password):

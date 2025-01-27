@@ -15,6 +15,7 @@ from .models import (
 from datetime import datetime
 from PIL import Image, ImageDraw, ImageFont
 import os
+from rest_framework.authtoken.models import Token
 
 
 def index(request):
@@ -111,25 +112,25 @@ def authorization(request):
     password = request.data.get('password')
     
     if not email or not password:
+        raise ValidationError({
+            'email': ["Email is required"] if not email else [],
+            'password': ["Password is required"] if not password else []
+        })
+    
+    try:
+        user = User.objects.get(email=email)
+    except User.DoesNotExist:
         return Response({
-            "error": {
-                "code": 422,
-                "message": "Validation error",
-                "errors": {
-                    "email": ["Email is required"] if not email else [],
-                    "password": ["Password is required"] if not password else []
-                }
-            }
-        }, status=status.HTTP_422_UNPROCESSABLE_ENTITY)
-    
-    user = authenticate(email=email, password=password)
-    
-    if user is None:
+            "message": "Login failed"
+        }, status=status.HTTP_403_FORBIDDEN)
+        
+    if not user.check_password(password):
         return Response({
             "message": "Login failed"
         }, status=status.HTTP_403_FORBIDDEN)
     
-    refresh = RefreshToken.for_user(user)
+    # Получаем или создаем токен
+    token, created = Token.objects.get_or_create(user=user)
     
     return Response({
         "data": {
@@ -139,7 +140,7 @@ def authorization(request):
                 "birth_date": user.birth_date.strftime('%Y-%m-%d'),
                 "email": user.email
             },
-            "token": str(refresh.access_token)
+            "token": str(token)
         }
     }, status=status.HTTP_200_OK)
 
@@ -154,24 +155,20 @@ def lunar_missions(request):
             mission_data = {
                 "mission": {
                     "name": mission.name,
-                    "launch_details": {
-                        "launch_date": mission.launch_details.launch_date.strftime("%Y-%m-%d"),
-                        "launch_site": {
-                            "name": mission.launch_details.launch_site.name,
-                            "location": {
-                                "latitude": str(mission.launch_details.launch_site.location.latitude),
-                                "longitude": str(mission.launch_details.launch_site.location.longitude)
-                            }
+                    "launch_date": mission.launch_date.strftime("%Y-%m-%d"),
+                    "launch_site": {
+                        "name": mission.launch_site.name,
+                        "location": {
+                            "latitude": str(mission.launch_site.location.latitude),
+                            "longitude": str(mission.launch_site.location.longitude)
                         }
                     },
-                    "landing_details": {
-                        "landing_date": mission.landing_details.landing_date.strftime("%Y-%m-%d"),
-                        "landing_site": {
-                            "name": mission.landing_details.landing_site.name,
-                            "coordinates": {
-                                "latitude": str(mission.landing_details.landing_site.coordinates.latitude),
-                                "longitude": str(mission.landing_details.landing_site.coordinates.longitude)
-                            }
+                    "landing_date": mission.landing_date.strftime("%Y-%m-%d"),
+                    "landing_site": {
+                        "name": mission.landing_site.name,
+                        "coordinates": {
+                            "latitude": str(mission.landing_site.coordinates.latitude),
+                            "longitude": str(mission.landing_site.coordinates.longitude)
                         }
                     },
                     "spacecraft": {
@@ -195,25 +192,25 @@ def lunar_missions(request):
             
             # Создаем или получаем координаты места запуска
             launch_coords = LunarCoordinates.objects.create(
-                latitude=data['launch_details']['launch_site']['location']['latitude'],
-                longitude=data['launch_details']['launch_site']['location']['longitude']
+                latitude=data['launch_site']['location']['latitude'],
+                longitude=data['launch_site']['location']['longitude']
             )
             
             # Создаем или получаем место запуска
             launch_site = LaunchSite.objects.create(
-                name=data['launch_details']['launch_site']['name'],
+                name=data['launch_site']['name'],
                 location=launch_coords
             )
             
             # Создаем или получаем координаты места посадки
             landing_coords = LunarCoordinates.objects.create(
-                latitude=data['landing_details']['landing_site']['coordinates']['latitude'],
-                longitude=data['landing_details']['landing_site']['coordinates']['longitude']
+                latitude=data['landing_site']['coordinates']['latitude'],
+                longitude=data['landing_site']['coordinates']['longitude']
             )
             
             # Создаем или получаем место посадки
             landing_site = LandingSite.objects.create(
-                name=data['landing_details']['landing_site']['name'],
+                name=data['landing_site']['name'],
                 coordinates=landing_coords
             )
             
@@ -239,14 +236,14 @@ def lunar_missions(request):
             
             # Создаем детали запуска
             LunarMission.LaunchDetails.objects.create(
-                launch_date=datetime.strptime(data['launch_details']['launch_date'], '%Y-%m-%d'),
+                launch_date=datetime.strptime(data['launch_date'], '%Y-%m-%d'),
                 launch_site=launch_site,
                 mission=mission
             )
             
             # Создаем детали посадки
             LunarMission.LandingDetails.objects.create(
-                landing_date=datetime.strptime(data['landing_details']['landing_date'], '%Y-%m-%d'),
+                landing_date=datetime.strptime(data['landing_date'], '%Y-%m-%d'),
                 landing_site=landing_site,
                 mission=mission
             )
@@ -284,28 +281,28 @@ def lunar_mission_detail(request, mission_id):
             data = request.data['mission']
             
             # Обновляем координаты места запуска
-            mission.launch_details.launch_site.location.latitude = data['launch_details']['launch_site']['location']['latitude']
-            mission.launch_details.launch_site.location.longitude = data['launch_details']['launch_site']['location']['longitude']
-            mission.launch_details.launch_site.location.save()
+            mission.launch_site.location.latitude = data['launch_site']['location']['latitude']
+            mission.launch_site.location.longitude = data['launch_site']['location']['longitude']
+            mission.launch_site.location.save()
             
             # Обновляем место запуска
-            mission.launch_details.launch_site.name = data['launch_details']['launch_site']['name']
-            mission.launch_details.launch_site.save()
+            mission.launch_site.name = data['launch_site']['name']
+            mission.launch_site.save()
             
             # Обновляем координаты места посадки
-            mission.landing_details.landing_site.coordinates.latitude = data['landing_details']['landing_site']['coordinates']['latitude']
-            mission.landing_details.landing_site.coordinates.longitude = data['landing_details']['landing_site']['coordinates']['longitude']
-            mission.landing_details.landing_site.coordinates.save()
+            mission.landing_site.coordinates.latitude = data['landing_site']['coordinates']['latitude']
+            mission.landing_site.coordinates.longitude = data['landing_site']['coordinates']['longitude']
+            mission.landing_site.coordinates.save()
             
             # Обновляем место посадки
-            mission.landing_details.landing_site.name = data['landing_details']['landing_site']['name']
-            mission.landing_details.landing_site.save()
+            mission.landing_site.name = data['landing_site']['name']
+            mission.landing_site.save()
             
             # Обновляем даты
-            mission.launch_details.launch_date = datetime.strptime(data['launch_details']['launch_date'], '%Y-%m-%d')
-            mission.launch_details.save()
-            mission.landing_details.landing_date = datetime.strptime(data['landing_details']['landing_date'], '%Y-%m-%d')
-            mission.landing_details.save()
+            mission.launch_date = datetime.strptime(data['launch_date'], '%Y-%m-%d')
+            mission.save()
+            mission.landing_date = datetime.strptime(data['landing_date'], '%Y-%m-%d')
+            mission.save()
             
             # Обновляем космический корабль
             mission.spacecraft.command_module = data['spacecraft']['command_module']
@@ -529,15 +526,15 @@ def search(request):
         mission_data = {
             "type": "Миссия",
             "name": mission.name,
-            "launch_date": mission.launch_details.launch_date.strftime("%Y-%m-%d"),
-            "landing_date": mission.landing_details.landing_date.strftime("%Y-%m-%d"),
+            "launch_date": mission.launch_date.strftime("%Y-%m-%d"),
+            "landing_date": mission.landing_date.strftime("%Y-%m-%d"),
             "crew": [
                 {
                     "name": member.name,
                     "role": member.role
                 } for member in mission.spacecraft.crew.all()
             ],
-            "landing_site": mission.landing_details.landing_site.name
+            "landing_site": mission.landing_site.name
         }
         data.append(mission_data)
         
