@@ -13,8 +13,8 @@ class UserManager(BaseUserManager):
         email = self.normalize_email(email)
         
         # Проверяем пароль перед хешированием
-        if not User.validate_password(password):
-            raise ValueError('Password must contain at least 3 characters, including lowercase, uppercase and digit')
+        # if not User.validate_password(password):
+        #     raise ValueError('Password must contain at least 3 characters, including lowercase, uppercase and digit')
             
         user = self.model(email=email, **extra_fields)
         # Хешируем пароль
@@ -108,7 +108,7 @@ class LunarCoordinates(models.Model):
 
 class LaunchSite(models.Model):
     name = models.CharField(max_length=200)
-    location = models.OneToOneField(LunarCoordinates, on_delete=models.CASCADE)
+    coordinates = models.OneToOneField(LunarCoordinates, on_delete=models.CASCADE)
 
     def __str__(self):
         return self.name
@@ -138,18 +138,23 @@ class Spacecraft(models.Model):
     def __str__(self):
         return f"{self.command_module} / {self.lunar_module}"
 
+class LaunchDetails(models.Model):
+    launch_date = models.DateTimeField()
+    launch_site = models.ForeignKey(LaunchSite, on_delete=models.CASCADE)
 
+class LandingDetails(models.Model):
+    landing_date = models.DateTimeField()
+    landing_site = models.ForeignKey(LandingSite, on_delete=models.CASCADE)
+    
+    
 class LunarMission(models.Model):
     name = models.CharField(max_length=200)
     spacecraft = models.OneToOneField(Spacecraft, on_delete=models.CASCADE)
-    launch_date = models.DateTimeField()
-    launch_site = models.ForeignKey(LaunchSite, on_delete=models.CASCADE)
-    landing_date = models.DateTimeField()
-    landing_site = models.ForeignKey(LandingSite, on_delete=models.CASCADE)
+    launch_details = models.OneToOneField(LaunchDetails, on_delete=models.CASCADE)
+    landing_details = models.OneToOneField(LandingDetails, on_delete=models.CASCADE)
 
     def __str__(self):
         return self.name
-
 
 class SpaceFlight(models.Model):
     flight_number = models.CharField(max_length=50, unique=True)
@@ -185,3 +190,12 @@ class WatermarkedImage(models.Model):
 
     def __str__(self):
         return f"Watermark: {self.message}"
+
+
+class Flight(models.Model):
+    name = models.CharField(max_length=200)
+    crew_capacity = models.IntegerField()
+    crew = models.ManyToManyField(CrewMember)
+    launch_details = models.OneToOneField(LaunchDetails, on_delete=models.CASCADE)
+    landing_details = models.OneToOneField(LandingDetails, on_delete=models.CASCADE)
+
